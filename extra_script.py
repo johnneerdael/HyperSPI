@@ -5,9 +5,34 @@ import sys
 from os.path import join
 from pathlib import Path
 import shutil
+import glob
+import zipfile
+
+env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", zip_recovery_if_present)
+
 
 sys.path.append(join(platform.get_package_dir("tool-esptoolpy")))
 import esptool
+
+def zip_recovery_if_present(source, target, env):
+    build_dir = Path(env.subst("$BUILD_DIR"))
+    # First try ESP32-style combined images
+    factory_bins = list(build_dir.glob("*.factory.bin"))
+    # Fallback: for ESP8266 zip the main firmware bin instead
+    if not factory_bins:
+        factory_bins = [build_dir / f"{env.subst('${PROGNAME}')} .bin".replace(' ', '')]
+        factory_bins = [p for p in factory_bins if p.exists()]
+
+    if not factory_bins:
+        print("No firmware binaries found to zip; skipping.")
+        return
+
+    out_zip = build_dir.parent / "recovery_firmware.zip"
+    with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for p in factory_bins:
+            zf.write(p, arcname=p.name)
+    print(f"Created {out_zip}")
+
 
 def post_program_action(source, target, env):
     program_path = target[0].get_abspath()
